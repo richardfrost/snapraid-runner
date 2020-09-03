@@ -6,6 +6,7 @@ import configparser
 import logging
 import logging.handlers
 import os.path
+import re
 import subprocess
 import sys
 import threading
@@ -17,6 +18,9 @@ from io import StringIO
 # Global variables
 config = None
 email_log = None
+limit_progress_log = False
+progress_counter = None
+progress_re = re.compile("^\d+%")
 
 
 def tee_log(infile, out_lines, log_level):
@@ -25,8 +29,19 @@ def tee_log(infile, out_lines, log_level):
     logs every line with log_level
     """
     def tee_thread():
+        global config
+        global limit_progress_log
+        global progress_counter
         for line in iter(infile.readline, ""):
             line = line.strip()
+            # Limit number of scrub/sync progress lines
+            # Example: 2020-01-01 12:00:00,000 [OUTPUT] 99%, 5889 MB, 171 MB/s, 654 block/s, CPU 20%, 0:00 ETA
+            if limit_progress_log and progress_re.match(line):
+                progress_counter += 1
+                if progress_counter < config["logging"]["progress-lines"]:
+                    continue
+                else:
+                    progress_counter = 0
             # Do not log the progress display
             if "\r" in line:
                 line = line.split("\r")[-1]
@@ -167,6 +182,7 @@ def load_config(args):
 
 
 def setup_logger():
+    global limit_progress_log
     log_format = logging.Formatter(
         "%(asctime)s [%(levelname)-6.6s] %(message)s")
     root_logger = logging.getLogger()
@@ -178,6 +194,13 @@ def setup_logger():
     console_logger = logging.StreamHandler(sys.stdout)
     console_logger.setFormatter(log_format)
     root_logger.addHandler(console_logger)
+
+    config["logging"]["progress"] = (config["logging"]["progress"].lower() == "true")
+    config["logging"]["progress-lines"] = (min(config["logging"]["progress-lines"], 1))
+    limit_progress_log = (config["logging"]["progress"] == false or (config["logging"]["progress"] == true and config["logging"]["progress-lines"] > 1))
+    if limit_progress_log and config["logging"]["progress-lines"] > 1:
+        global progress_counter
+        progress_counter = config["logging"]["progress-lines"] - 1
 
     if config["logging"]["file"]:
         max_log_size = min(config["logging"]["maxsize"], 0) * 1024
