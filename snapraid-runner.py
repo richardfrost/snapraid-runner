@@ -37,11 +37,14 @@ def tee_log(infile, out_lines, log_level):
             # Limit number of scrub/sync progress lines
             # Example: 2020-01-01 12:00:00,000 [OUTPUT] 99%, 5889 MB, 171 MB/s, 654 block/s, CPU 20%, 0:00 ETA
             if limit_progress_log and progress_re.match(line):
-                progress_counter += 1
-                if progress_counter < config["logging"]["progress-lines"]:
-                    continue
+                if config["logging"]["progress"]:
+                    progress_counter += 1
+                    if progress_counter < config["logging"]["progress-lines"]:
+                        continue
+                    else:
+                        progress_counter = 0
                 else:
-                    progress_counter = 0
+                    continue
             # Do not log the progress display
             if "\r" in line:
                 line = line.split("\r")[-1]
@@ -162,7 +165,7 @@ def load_config(args):
             config[section][k] = v.strip()
 
     int_options = [
-        ("snapraid", "deletethreshold"), ("logging", "maxsize"),
+        ("snapraid", "deletethreshold"), ("logging", "maxsize"), ("logging", "progress-lines"),
         ("scrub", "percentage"), ("scrub", "older-than"), ("email", "maxsize"),
     ]
     for section, option in int_options:
@@ -196,9 +199,9 @@ def setup_logger():
     root_logger.addHandler(console_logger)
 
     config["logging"]["progress"] = (config["logging"]["progress"].lower() == "true")
-    config["logging"]["progress-lines"] = (min(config["logging"]["progress-lines"], 1))
-    limit_progress_log = (config["logging"]["progress"] == false or (config["logging"]["progress"] == true and config["logging"]["progress-lines"] > 1))
-    if limit_progress_log and config["logging"]["progress-lines"] > 1:
+    config["logging"]["progress-lines"] = (max(config["logging"]["progress-lines"], 1))
+    limit_progress_log = (not config["logging"]["progress"] or (config["logging"]["progress"] and config["logging"]["progress-lines"] > 1))
+    if limit_progress_log:
         global progress_counter
         progress_counter = config["logging"]["progress-lines"] - 1
 

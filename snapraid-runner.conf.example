@@ -16,7 +16,7 @@ maxsize = 5000
 ; log progress output
 progress = true
 ; log every n progress lines
-progress-lines = 100
+progress-lines = 25
 
 [email]
 ; when to send an email, comma-separated list of [success, error]
