@@ -19,8 +19,9 @@ from io import StringIO
 config = None
 email_log = None
 limit_progress_log = False
+next_percentage = 0
 progress_counter = None
-progress_re = re.compile("^\d+%")
+progress_re = re.compile("^(\d+)%")
 
 
 def tee_log(infile, out_lines, log_level):
@@ -31,20 +32,25 @@ def tee_log(infile, out_lines, log_level):
     def tee_thread():
         global config
         global limit_progress_log
+        global next_percentage
         global progress_counter
         for line in iter(infile.readline, ""):
             line = line.strip()
             # Limit number of scrub/sync progress lines
             # Example: 2020-01-01 12:00:00,000 [OUTPUT] 99%, 5889 MB, 171 MB/s, 654 block/s, CPU 20%, 0:00 ETA
             if limit_progress_log and progress_re.match(line):
-                if config["logging"]["progress"]:
+                if config["logging"]["progress-percent"]:
+                    current_percentage = int(progress_re.match(line).group(1))
+                    if (current_percentage >= next_percentage):
+                        next_percentage += config["logging"]["progress-interval"]
+                    else:
+                        continue
+                else:
                     progress_counter += 1
-                    if progress_counter < config["logging"]["progress-lines"]:
+                    if progress_counter < config["logging"]["progress-interval"]:
                         continue
                     else:
                         progress_counter = 0
-                else:
-                    continue
             # Do not log the progress display
             if "\r" in line:
                 line = line.split("\r")[-1]
@@ -165,7 +171,7 @@ def load_config(args):
             config[section][k] = v.strip()
 
     int_options = [
-        ("snapraid", "deletethreshold"), ("logging", "maxsize"), ("logging", "progress-lines"),
+        ("snapraid", "deletethreshold"), ("logging", "maxsize"), ("logging", "progress-interval"),
         ("scrub", "percentage"), ("scrub", "older-than"), ("email", "maxsize"),
     ]
     for section, option in int_options:
@@ -199,11 +205,15 @@ def setup_logger():
     root_logger.addHandler(console_logger)
 
     config["logging"]["progress"] = (config["logging"]["progress"].lower() == "true")
-    config["logging"]["progress-lines"] = (max(config["logging"]["progress-lines"], 1))
-    limit_progress_log = (not config["logging"]["progress"] or (config["logging"]["progress"] and config["logging"]["progress-lines"] > 1))
+    config["logging"]["progress-interval"] = (max(config["logging"]["progress-interval"], 1))
+    config["logging"]["progress-percent"] = (config["logging"]["progress-percent"].lower() == "true")
+    limit_progress_log = (
+        not config["logging"]["progress"]
+        or (config["logging"]["progress"] and config["logging"]["progress-interval"] > 1)
+    )
     if limit_progress_log:
         global progress_counter
-        progress_counter = config["logging"]["progress-lines"] - 1
+        progress_counter = config["logging"]["progress-interval"] - 1
 
     if config["logging"]["file"]:
         max_log_size = min(config["logging"]["maxsize"], 0) * 1024
@@ -263,6 +273,7 @@ def main():
 
 
 def run():
+    global next_percentage
     logging.info("=" * 60)
     logging.info("Run started")
     logging.info("=" * 60)
@@ -305,6 +316,7 @@ def run():
     else:
         logging.info("Running sync...")
         try:
+            next_percentage = 0
             snapraid_command("sync")
         except subprocess.CalledProcessError as e:
             logging.error(e)
@@ -314,6 +326,7 @@ def run():
     if config["scrub"]["enabled"]:
         logging.info("Running scrub...")
         try:
+            next_percentage = 0
             snapraid_command("scrub", {
                 "percentage": config["scrub"]["percentage"],
                 "older-than": config["scrub"]["older-than"],

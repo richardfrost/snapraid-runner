@@ -15,8 +15,10 @@ file = snapraid.log
 maxsize = 5000
 ; log progress output
 progress = true
-; log every n progress lines
-progress-lines = 25
+; limit progress log output by percentage, or number of lines
+progress-percent = true
+; log progress every n percent or lines
+progress-interval = 5
 
 [email]
 ; when to send an email, comma-separated list of [success, error]
